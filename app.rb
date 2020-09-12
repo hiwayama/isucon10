@@ -490,7 +490,7 @@ class App < Sinatra::Base
     coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:longitude, :latitude) }.join(',')
     estate_ids = estates.map{|e| e[:id]}
     if estate_ids.length == 0
-      return {estates: [], count: 0}
+      return {estates: [], count: 0}.to_json
     end
     sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), ST_PointFromGeoHash(geo_hash, 0)) ORDER BY popularity DESC, id ASC' % [estate_ids.join(","), coordinates_to_text]
     estates_in_polygon = db.xquery(sql)
