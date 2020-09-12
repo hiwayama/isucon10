@@ -6,7 +6,6 @@ gem "sinatra"
 gem "sinatra-contrib"
 gem "mysql2"
 gem "mysql2-cs-bind"
-gem "unicorn"
+gem "puma"
 
 gem 'newrelic_rpm'
-
