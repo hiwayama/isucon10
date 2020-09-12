@@ -149,6 +149,7 @@ class App < Sinatra::Base
     end
     # /api/chairで更新されるまでは消えないのでキャッシュ可能なはず...
     res    
+    res = { chair: load_low_priced_chairs}.to_json
   end
 
   get '/api/chair/search' do
