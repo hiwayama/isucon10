@@ -482,6 +482,7 @@ class App < Sinatra::Base
       },
     }
 
+    # ここにindexきかせたほうがいいかも...？
     sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
@@ -566,7 +567,7 @@ class App < Sinatra::Base
     ESTATE_SEARCH_CONDITION.to_json
   end
 
-  # FIXME: 700msecくらい...
+  # 700msecくらい...かかってたけど改善したはず。
   get '/api/recommended_estate/:id' do
     id =
       begin
