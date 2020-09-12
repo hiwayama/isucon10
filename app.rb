@@ -344,7 +344,7 @@ class App < Sinatra::Base
   def load_low_priced_estates
     sql = "SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT #{LIMIT}" # XXX:
     estates = db.xquery(sql).to_a
-    estates.map { |e| camelize_keys_for_estate(e) } }
+    estates.map { |e| camelize_keys_for_estate(e) }
   end
 
   get '/api/estate/low_priced' do
