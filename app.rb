@@ -585,13 +585,13 @@ class App < Sinatra::Base
     d = chair[:depth]
 
     lengths = [w, h, d].sort
-    # 1番長いものと2番目に長いもの
-    w1 = lengths[2]
-    w2 = lengths[1]
+    # 1番小さいものと2番目に小さいもの
+    w1 = lengths[1]
+    w2 = lengths[0]
 
     # FIXME: 遅い...
     # 椅子を長方形に見立ててドアを通れるか、のチェック
-    # ドア最大値 >= 椅子最大値 && ドア最小値 >= 椅子2番目の値 でいける気がする...
+    # ドア最大値 >= 椅子2番目値 && ドア最小値 >= 椅子最小の値 でいける気がする...
     sql = "SELECT * FROM estate WHERE w1 >= ? AND w2 >= ? ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}";
     estates = db.xquery(sql, w1, w2);
     #sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
