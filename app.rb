@@ -526,8 +526,10 @@ class App < Sinatra::Base
     # FIXME: 非同期化してもいいかも...?
     transaction('post_api_estate') do
       CSV.parse(params[:estates][:tempfile].read, skip_blanks: true) do |row|
-        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12))'
-        db.xquery(sql, *row.map(&:to_s))
+        w1 = [row[8], row[9]].map{|i| i.to_i}.max
+        w2 = [row[8], row[9]].map{|i| i.to_i}.min
+        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash, w1, w2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12))'
+        db.xquery(sql, *row.map(&:to_s), w1, w2)
       end
     end
 
