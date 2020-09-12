@@ -106,7 +106,7 @@ class App < Sinatra::Base
 
   post '/initialize' do
     sql_dir = Pathname.new('../mysql/db')
-    %w[0_Schema.sql 1_DummyEstateData.sql 2_DummyChairData.sql].each do |sql|
+    %w[0_Schema.sql 1_DummyEstateData.sql 2_DummyChairData.sql 3_AlterData.sql].each do |sql|
       sql_path = sql_dir.join(sql)
       cmd = ['mysql', '-h', db_info[:host], '-u', db_info[:username], "-p#{db_info[:password]}", '-P', db_info[:port], db_info[:database]]
       IO.popen(cmd, 'w') do |io|
@@ -456,6 +456,7 @@ class App < Sinatra::Base
   # |   107 | 0.068 | 1.912 | 46.152 | 0.431 | 0.068 | 0.260 | 1.400 |  0.380 |    24.000 | 30292.000 | 1753267.000 | 16385.673 | POST   | /api/estate/nazotte |
   # +-------+-------+-------+--------+-------+-------+-------+-------+--------+-----------+-----------+-------------+-----------+--------+---------------------+
   # 400msecくらいなので遅い...
+  # たぶんはやくなったはず
   post '/api/estate/nazotte' do
     coordinates = body_json_params[:coordinates]
 
@@ -469,8 +470,6 @@ class App < Sinatra::Base
       halt 400
     end
 
-    # cの要素数多いなら効率化できそう(なぜかえらーになるのでコメントアウト)
-    #logger.info("coordinates: #{coordinates.length}")
     longitudes = coordinates.map { |c| c[:longitude] }
     latitudes = coordinates.map { |c| c[:latitude] }
     bounding_box = {
@@ -484,24 +483,17 @@ class App < Sinatra::Base
       },
     }
 
-    sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
+    # ここにindexきかせたほうがいいかも...？
+    sql = 'SELECT id FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ?'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
-    # ((なぜかえらーになるのでコメントアウト))
-    # logger.info("estates: #{estates.length}")
-
-    estates_in_polygon = []
-    estates.each do |estate|
-      point = "'POINT(%f %f)'" % estate.values_at(:latitude, :longitude)
-      coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
-      # N+1
-      sql = 'SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))' % [coordinates_to_text, point]
-      e = db.xquery(sql, estate[:id]).first
-      if e
-        estates_in_polygon << e
-      end
+    coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:longitude, :latitude) }.join(',')
+    estate_ids = estates.map{|e| e[:id]}
+    if estate_ids.length == 0
+      return {estates: [], count: 0}
     end
-
+    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), ST_PointFromGeoHash(geo_hash, 0)) ORDER BY popularity DESC, id ASC' % [estate_ids.join(","), coordinates_to_text]
+    estates_in_polygon = db.xquery(sql)
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
       estates: nazotte_estates.map { |e| camelize_keys_for_estate(e) },
@@ -539,8 +531,10 @@ class App < Sinatra::Base
     # FIXME: 非同期化してもいいかも...?
     transaction('post_api_estate') do
       CSV.parse(params[:estates][:tempfile].read, skip_blanks: true) do |row|
-        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        db.xquery(sql, *row.map(&:to_s))
+        w1 = [row[8], row[9]].map{|i| i.to_i}.max
+        w2 = [row[8], row[9]].map{|i| i.to_i}.min
+        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash, w1, w2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12), ?, ?)'
+        db.xquery(sql, *row.map(&:to_s), w1, w2)
       end
     end
 
@@ -577,7 +571,7 @@ class App < Sinatra::Base
     ESTATE_SEARCH_CONDITION.to_json
   end
 
-  # FIXME: 700msecくらい...
+  # 700msecくらい...かかってたけど改善したはず。
   get '/api/recommended_estate/:id' do
     id =
       begin
@@ -597,9 +591,15 @@ class App < Sinatra::Base
     h = chair[:height]
     d = chair[:depth]
 
-    # FIXME: 遅い...
-    sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
-    estates = db.xquery(sql, w, h, w, d, h, w, h, d, d, w, d, h).to_a
+    lengths = [w, h, d].sort
+    # 1番小さいものと2番目に小さいもの
+    w1 = lengths[1]
+    w2 = lengths[0]
+
+    # 椅子を長方形に見立ててドアを通れるか、のチェック
+    # ドア最大値 >= 椅子2番目値 && ドア最小値 >= 椅子最小の値 でいける気がする...
+    sql = "SELECT * FROM estate WHERE w1 >= ? AND w2 >= ? ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}";
+    estates = db.xquery(sql, w1, w2);
 
     { estates: estates.map { |e| camelize_keys_for_estate(e) } }.to_json
   end
