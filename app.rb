@@ -528,7 +528,7 @@ class App < Sinatra::Base
       CSV.parse(params[:estates][:tempfile].read, skip_blanks: true) do |row|
         w1 = [row[8], row[9]].map{|i| i.to_i}.max
         w2 = [row[8], row[9]].map{|i| i.to_i}.min
-        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash, w1, w2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12))'
+        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash, w1, w2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12), ?, ?)'
         db.xquery(sql, *row.map(&:to_s), w1, w2)
       end
     end
@@ -591,13 +591,10 @@ class App < Sinatra::Base
     w1 = lengths[1]
     w2 = lengths[0]
 
-    # FIXME: 遅い...
     # 椅子を長方形に見立ててドアを通れるか、のチェック
     # ドア最大値 >= 椅子2番目値 && ドア最小値 >= 椅子最小の値 でいける気がする...
     sql = "SELECT * FROM estate WHERE w1 >= ? AND w2 >= ? ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}";
     estates = db.xquery(sql, w1, w2);
-    #sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
-    #estates = db.xquery(sql, w, h, w, d, h, w, h, d, d, w, d, h).to_a
 
     { estates: estates.map { |e| camelize_keys_for_estate(e) } }.to_json
   end
