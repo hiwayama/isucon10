@@ -2,7 +2,7 @@ worker_num = ENV.fetch("WORKER_NUM", 3)
 workers worker_num
 app_root = File.expand_path('../', __FILE__)
 
-thread_num = ENV.fetch("PUMA_THREAD_NUM", 5)
+thread_num = ENV.fetch("PUMA_THREAD_NUM", 16)
 threads thread_num, thread_num
 
 port (ENV.fetch('SERVER_PORT', 1323)).to_i
