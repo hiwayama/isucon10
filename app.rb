@@ -584,10 +584,18 @@ class App < Sinatra::Base
     h = chair[:height]
     d = chair[:depth]
 
+    lengths = [w, h, d].sort
+    # 1番長いものと2番目に長いもの
+    w1 = lengths[2]
+    w2 = lengths[1]
+
     # FIXME: 遅い...
     # 椅子を長方形に見立ててドアを通れるか、のチェック
-    sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
-    estates = db.xquery(sql, w, h, w, d, h, w, h, d, d, w, d, h).to_a
+    # ドア最大値 >= 椅子最大値 && ドア最小値 >= 椅子2番目の値 でいける気がする...
+    sql = "SELECT * FROM estate WHERE w1 >= ? AND w2 >= ? ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}";
+    estates = db.xquery(sql, w1, w2);
+    #sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
+    #estates = db.xquery(sql, w, h, w, d, h, w, h, d, d, w, d, h).to_a
 
     { estates: estates.map { |e| camelize_keys_for_estate(e) } }.to_json
   end
