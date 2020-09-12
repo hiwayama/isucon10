@@ -116,6 +116,11 @@ class App < Sinatra::Base
       estates = db.xquery(sql).to_a
       estates.map { |e| camelize_keys_for_estate(e) }
     end
+
+    def load_low_priced_chairs
+      sql = "SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT #{LIMIT}"     
+      db.query(sql).to_a
+    end
   end
 
   post '/initialize' do
@@ -128,23 +133,22 @@ class App < Sinatra::Base
         io.close
       end
     end
-    load_low_priced_estates
+    res = { chair: load_low_priced_chairs}.to_json
+    redis.set("LOW_PRICED_CHAIR", res)
+    res = { estates: load_low_priced_estates}.to_json
+    redis.set("LOW_PRICED_ESTATE", res)
+
     { language: 'ruby' }.to_json
   end
 
   get '/api/chair/low_priced' do
-    # FIXME: 700msecくらいかかる slow query
-    # Attribute    pct   total     min     max     avg     95%  stddev  median
-    # ============ === ======= ======= ======= ======= ======= ======= =======
-    # Count         44       4
-    # Exec time     41      3s   507ms      1s   694ms   992ms   184ms   816ms
-    # Lock time     74   539us    55us   215us   134us   214us    76us   209us
-    # Rows sent     97      80      20      20      20      20       0      20
-    # Rows examine  66 116.78k  28.83k  29.32k  29.19k  28.66k       0  28.66k
-    # Query size    53     284      71      71      71      71       0      71
-    sql = "SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT #{LIMIT}" # XXX:
-    chairs = db.query(sql).to_a
-    { chairs: chairs }.to_json
+    res = redis.get("LOW_PRICED_CHAIR")
+    if res.nil?
+      res = { estates: load_low_priced_chairs}.to_json
+      redis.set("LOW_PRICED_CHAIR", res)
+    end
+    # /api/chairで更新されるまでは消えないのでキャッシュ可能なはず...
+    res    
   end
 
   get '/api/chair/search' do
@@ -320,6 +324,7 @@ class App < Sinatra::Base
         db.xquery(sql, *row.map(&:to_s))
       end
     end
+    redis.del("LOW_PRICED_CHAIR")
 
     status 201
   end
