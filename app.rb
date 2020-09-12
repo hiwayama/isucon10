@@ -469,8 +469,8 @@ class App < Sinatra::Base
       halt 400
     end
 
-    # cの要素数多いなら効率化できそう
-    logger.info("coordinates: #{coordinates.length}")
+    # cの要素数多いなら効率化できそう(なぜかえらーになるのでコメントアウト)
+    #logger.info("coordinates: #{coordinates.length}")
     longitudes = coordinates.map { |c| c[:longitude] }
     latitudes = coordinates.map { |c| c[:latitude] }
     bounding_box = {
@@ -487,7 +487,8 @@ class App < Sinatra::Base
     sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
-    logger.info("estates: #{estates.length}")
+    # ((なぜかえらーになるのでコメントアウト))
+    # logger.info("estates: #{estates.length}")
 
     estates_in_polygon = []
     estates.each do |estate|
