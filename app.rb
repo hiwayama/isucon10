@@ -115,6 +115,10 @@ class App < Sinatra::Base
       end
     end
 
+    # geo_hashカラムの登録
+    sql = "UPDATE estate set geo_hash=ST_GeoHash(longitude, latitude, 12);";
+    db.query(sql)
+
     { language: 'ruby' }.to_json
   end
 
@@ -490,17 +494,10 @@ class App < Sinatra::Base
     # ((なぜかえらーになるのでコメントアウト))
     # logger.info("estates: #{estates.length}")
 
-    estates_in_polygon = []
-    estates.each do |estate|
-      point = "'POINT(%f %f)'" % estate.values_at(:latitude, :longitude)
-      coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
-      # N+1
-      sql = 'SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))' % [coordinates_to_text, point]
-      e = db.xquery(sql, estate[:id]).first
-      if e
-        estates_in_polygon << e
-      end
-    end
+    coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
+    estate_ids = estates.map{|e| e[:id]}
+    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), geo_hash)' % [estate_ids.join(","), coordinates_to_text]
+    estates_in_polygon = db.query(sql)
 
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
