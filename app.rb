@@ -469,8 +469,6 @@ class App < Sinatra::Base
       halt 400
     end
 
-    # cの要素数多いなら効率化できそう(なぜかえらーになるのでコメントアウト)
-    #logger.info("coordinates: #{coordinates.length}")
     longitudes = coordinates.map { |c| c[:longitude] }
     latitudes = coordinates.map { |c| c[:latitude] }
     bounding_box = {
@@ -487,12 +485,9 @@ class App < Sinatra::Base
     sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
-    # ((なぜかえらーになるのでコメントアウト))
-    # logger.info("estates: #{estates.length}")
-
     coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:longitude, :latitude) }.join(',')
     estate_ids = estates.map{|e| e[:id]}
-    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), geo_hash)' % [estate_ids.join(","), coordinates_to_text]
+    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), ST_PointFromGeoHash(geo_hash))' % [estate_ids.join(","), coordinates_to_text]
     estates_in_polygon = db.xquery(sql)
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
