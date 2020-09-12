@@ -16,6 +16,10 @@ class App < Sinatra::Base
 
   configure do
     enable :logging
+    # debug log
+    file = File.new("#{settings.root}/log/development.log", 'a+')
+    file.sync = true
+    use Rack::CommonLogger, file
   end
 
   set :add_charset, ['application/json']
@@ -115,6 +119,15 @@ class App < Sinatra::Base
   end
 
   get '/api/chair/low_priced' do
+    # FIXME: 700msecくらいかかる slow query
+    # Attribute    pct   total     min     max     avg     95%  stddev  median
+    # ============ === ======= ======= ======= ======= ======= ======= =======
+    # Count         44       4
+    # Exec time     41      3s   507ms      1s   694ms   992ms   184ms   816ms
+    # Lock time     74   539us    55us   215us   134us   214us    76us   209us
+    # Rows sent     97      80      20      20      20      20       0      20
+    # Rows examine  66 116.78k  28.83k  29.32k  29.19k  28.66k       0  28.66k
+    # Query size    53     284      71      71      71      71       0      71
     sql = "SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT #{LIMIT}" # XXX:
     chairs = db.query(sql).to_a
     { chairs: chairs }.to_json
@@ -236,6 +249,17 @@ class App < Sinatra::Base
         halt 400
       end
 
+    # slow query
+    # SELECT COUNT(*) as count FROM chair WHERE depth >= '80' AND depth < '110' AND stock > 0\G
+    # Attribute    pct   total     min     max     avg     95%  stddev  median
+    # ============ === ======= ======= ======= ======= ======= ======= =======
+    # Count         11       1
+    # Exec time     13   921ms   921ms   921ms   921ms   921ms       0   921ms
+    # Lock time     10    79us    79us    79us    79us    79us       0    79us
+    # Rows sent      1       1       1       1       1       1       0       1
+    # Rows examine  16  29.30k  29.30k  29.30k  29.30k  29.30k       0  29.30k
+    # Query size    16      87      87      87      87      87       0      87
+
     sqlprefix = 'SELECT * FROM chair WHERE '
     search_condition = search_queries.join(' AND ')
     limit_offset = " ORDER BY popularity DESC, id ASC LIMIT #{per_page} OFFSET #{per_page * page}" # XXX: mysql-cs-bind doesn't support escaping variables for limit and offset
@@ -300,6 +324,7 @@ class App < Sinatra::Base
         halt 400
       end
 
+    # slow
     transaction('post_api_chair_buy') do |tx_name|
       chair = db.xquery('SELECT * FROM chair WHERE id = ? AND stock > 0 FOR UPDATE', id).first
       unless chair
@@ -316,10 +341,15 @@ class App < Sinatra::Base
     CHAIR_SEARCH_CONDITION.to_json
   end
 
-  get '/api/estate/low_priced' do
+  def load_low_priced_estates
     sql = "SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT #{LIMIT}" # XXX:
     estates = db.xquery(sql).to_a
-    { estates: estates.map { |e| camelize_keys_for_estate(e) } }.to_json
+    estates.map { |e| camelize_keys_for_estate(e) }
+  end
+
+  get '/api/estate/low_priced' do
+    # /api/estateで更新されるまでは消えないのでキャッシュ可能なはず...
+    return { estates: load_low_priced_estates}.to_json
   end
 
   get '/api/estate/search' do
@@ -419,6 +449,13 @@ class App < Sinatra::Base
     { count: count, estates: estates.map { |e| camelize_keys_for_estate(e) } }.to_json
   end
 
+  # isucon@team326-001:~$ sudo grep "/api/estate/nazotte" /var/log/nginx/access.log | grep -v 499 | alp
+  # +-------+-------+-------+--------+-------+-------+-------+-------+--------+-----------+-----------+-------------+-----------+--------+---------------------+
+  # | COUNT |  MIN  |  MAX  |  SUM   |  AVG  |  P1   |  P50  |  P99  | STDDEV | MIN(BODY) | MAX(BODY) |  SUM(BODY)  | AVG(BODY) | METHOD |         URI         |
+  # +-------+-------+-------+--------+-------+-------+-------+-------+--------+-----------+-----------+-------------+-----------+--------+---------------------+
+  # |   107 | 0.068 | 1.912 | 46.152 | 0.431 | 0.068 | 0.260 | 1.400 |  0.380 |    24.000 | 30292.000 | 1753267.000 | 16385.673 | POST   | /api/estate/nazotte |
+  # +-------+-------+-------+--------+-------+-------+-------+-------+--------+-----------+-----------+-------------+-----------+--------+---------------------+
+  # 400msecくらいなので遅い...
   post '/api/estate/nazotte' do
     coordinates = body_json_params[:coordinates]
 
@@ -432,6 +469,8 @@ class App < Sinatra::Base
       halt 400
     end
 
+    # cの要素数多いなら効率化できそう
+    logger.info("coordinates: #{coordinates.length}")
     longitudes = coordinates.map { |c| c[:longitude] }
     latitudes = coordinates.map { |c| c[:latitude] }
     bounding_box = {
@@ -448,10 +487,13 @@ class App < Sinatra::Base
     sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
+    logger.info("estates: #{estates.length}")
+
     estates_in_polygon = []
     estates.each do |estate|
       point = "'POINT(%f %f)'" % estate.values_at(:latitude, :longitude)
       coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
+      # N+1
       sql = 'SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))' % [coordinates_to_text, point]
       e = db.xquery(sql, estate[:id]).first
       if e
@@ -466,6 +508,8 @@ class App < Sinatra::Base
     }.to_json
   end
 
+  # ちょいおそい...？
+  # |     1 | 0.216 | 0.216 |   0.216 | 0.216 | 0.216 | 0.216 | 0.216 |  0.000 |   549.000 |   549.000 |      549.000 |   549.000 | GET    | /api/estate/68  
   get '/api/estate/:id' do
     id =
       begin
@@ -484,12 +528,14 @@ class App < Sinatra::Base
     camelize_keys_for_estate(estate).to_json
   end
 
+  # 499頻発
   post '/api/estate' do
     unless params[:estates]
       logger.error 'Failed to get form file'
       halt 400
     end
 
+    # FIXME: 非同期化してもいいかも...?
     transaction('post_api_estate') do
       CSV.parse(params[:estates][:tempfile].read, skip_blanks: true) do |row|
         sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -500,6 +546,7 @@ class App < Sinatra::Base
     status 201
   end
 
+  # 遅くないけど大量に叩かれている(499も出てる)
   post '/api/estate/req_doc/:id' do
     unless body_json_params[:email]
       logger.error 'post request document failed: email not found in request body'
@@ -523,10 +570,13 @@ class App < Sinatra::Base
     status 200
   end
 
+  # そんなに遅くなさそう
+  # |   309 | 0.004 | 0.128 |   2.160 | 0.007 | 0.000 | 0.004 | 0.076 |  0.016 |  1563.000 |  1563.000 |   482967.000 |  1563.000 | GET    | /api/estate/search/condition  |
   get '/api/estate/search/condition' do
     ESTATE_SEARCH_CONDITION.to_json
   end
 
+  # FIXME: 700msecくらい...
   get '/api/recommended_estate/:id' do
     id =
       begin
@@ -546,6 +596,7 @@ class App < Sinatra::Base
     h = chair[:height]
     d = chair[:depth]
 
+    # FIXME: 遅い...
     sql = "SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT #{LIMIT}" # XXX:
     estates = db.xquery(sql, w, h, w, d, h, w, h, d, d, w, d, h).to_a
 
