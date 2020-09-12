@@ -490,11 +490,10 @@ class App < Sinatra::Base
     # ((なぜかえらーになるのでコメントアウト))
     # logger.info("estates: #{estates.length}")
 
-    coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
+    coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:longitude, :latitude) }.join(',')
     estate_ids = estates.map{|e| e[:id]}
     sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), geo_hash)' % [estate_ids.join(","), coordinates_to_text]
     estates_in_polygon = db.xquery(sql)
-
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
       estates: nazotte_estates.map { |e| camelize_keys_for_estate(e) },
