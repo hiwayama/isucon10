@@ -110,6 +110,12 @@ class App < Sinatra::Base
       logger.error "Failed to parse body: #{e.inspect}"
       halt 400
     end
+
+    def load_low_priced_estates
+      sql = "SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT #{LIMIT}" # XXX:
+      estates = db.xquery(sql).to_a
+      estates.map { |e| camelize_keys_for_estate(e) }
+    end
   end
 
   post '/initialize' do
@@ -122,7 +128,7 @@ class App < Sinatra::Base
         io.close
       end
     end
-
+    load_low_priced_estates
     { language: 'ruby' }.to_json
   end
 
@@ -347,12 +353,6 @@ class App < Sinatra::Base
 
   get '/api/chair/search/condition' do
     CHAIR_SEARCH_CONDITION.to_json
-  end
-
-  def load_low_priced_estates
-    sql = "SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT #{LIMIT}" # XXX:
-    estates = db.xquery(sql).to_a
-    estates.map { |e| camelize_keys_for_estate(e) }
   end
 
   get '/api/estate/low_priced' do
