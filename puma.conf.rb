@@ -6,11 +6,11 @@ thread_num = ENV.fetch("PUMA_THREAD_NUM", 5)
 threads thread_num, thread_num
 
 port (ENV.fetch('SERVER_PORT', 1323)).to_i
-pidfile "#{app_root}/server.pid"
+#pidfile "#{app_root}/server.pid"
 
 worker_timeout 60
 
-daemonize true
+#daemonize true
 
 preload_app!
 
