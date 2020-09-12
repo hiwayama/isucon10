@@ -8,4 +8,5 @@ gem "mysql2"
 gem "mysql2-cs-bind"
 gem "puma"
 
-gem 'newrelic_rpm'
+# gem 'newrelic_rpm'
+gem 'hiredis'

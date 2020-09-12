@@ -2,6 +2,7 @@ require 'sinatra'
 require 'mysql2'
 require 'mysql2-cs-bind'
 require 'csv'
+require 'hiredis'
 
 class App < Sinatra::Base
   LIMIT = 20
@@ -25,6 +26,14 @@ class App < Sinatra::Base
   set :add_charset, ['application/json']
 
   helpers do
+    def redis
+      if Thread.current[:redis]
+        Thread.current[:redis] = Hiredis::Connection.new
+        conn.connect(ENV.fetch('REDIS_HOST', "127.0.0.1"), 6379)
+      end
+      Thread.current[:redis]
+    end
+
     def db_info
       {
         host: ENV.fetch('MYSQL_HOST', '127.0.0.1'),
@@ -348,8 +357,12 @@ class App < Sinatra::Base
   end
 
   get '/api/estate/low_priced' do
+    res = redis.get("LOW_PRICED_ESTATE")
+    if res.nil?
+      redis.set("LOW_PRICED_ESTATE", { estates: load_low_priced_estates}.to_json)
+    end
     # /api/estateで更新されるまでは消えないのでキャッシュ可能なはず...
-    return { estates: load_low_priced_estates}.to_json
+    res
   end
 
   get '/api/estate/search' do
@@ -537,6 +550,7 @@ class App < Sinatra::Base
         db.xquery(sql, *row.map(&:to_s), w1, w2)
       end
     end
+    redis.del("LOW_PRICED_ESTATE")
 
     status 201
   end
