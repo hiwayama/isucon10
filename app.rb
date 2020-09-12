@@ -106,7 +106,7 @@ class App < Sinatra::Base
 
   post '/initialize' do
     sql_dir = Pathname.new('../mysql/db')
-    %w[0_Schema.sql 1_DummyEstateData.sql 2_DummyChairData.sql].each do |sql|
+    %w[0_Schema.sql 1_DummyEstateData.sql 2_DummyChairData.sql 3_AlterData.sql].each do |sql|
       sql_path = sql_dir.join(sql)
       cmd = ['mysql', '-h', db_info[:host], '-u', db_info[:username], "-p#{db_info[:password]}", '-P', db_info[:port], db_info[:database]]
       IO.popen(cmd, 'w') do |io|
@@ -114,10 +114,6 @@ class App < Sinatra::Base
         io.close
       end
     end
-
-    # geo_hashカラムの登録
-    sql = "UPDATE estate set geo_hash=ST_GeoHash(longitude, latitude, 12);";
-    db.query(sql)
 
     { language: 'ruby' }.to_json
   end
@@ -497,7 +493,7 @@ class App < Sinatra::Base
     coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:latitude, :longitude) }.join(',')
     estate_ids = estates.map{|e| e[:id]}
     sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), geo_hash)' % [estate_ids.join(","), coordinates_to_text]
-    estates_in_polygon = db.query(sql)
+    estates_in_polygon = db.xquery(sql)
 
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
@@ -536,7 +532,7 @@ class App < Sinatra::Base
     # FIXME: 非同期化してもいいかも...?
     transaction('post_api_estate') do
       CSV.parse(params[:estates][:tempfile].read, skip_blanks: true) do |row|
-        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        sql = 'INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity, geo_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeoHash(longitude, latitude, 12))'
         db.xquery(sql, *row.map(&:to_s))
       end
     end
