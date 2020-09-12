@@ -115,6 +115,7 @@ class App < Sinatra::Base
   end
 
   get '/api/chair/low_priced' do
+    # FIXME: index
     sql = "SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT #{LIMIT}" # XXX:
     chairs = db.query(sql).to_a
     { chairs: chairs }.to_json
@@ -124,6 +125,7 @@ class App < Sinatra::Base
     search_queries = []
     query_params = []
 
+    # 複雑な検索クエリ組んでる...
     if params[:priceRangeId] && params[:priceRangeId].size > 0
       chair_price = CHAIR_SEARCH_CONDITION[:price][:ranges][params[:priceRangeId].to_i]
       unless chair_price
