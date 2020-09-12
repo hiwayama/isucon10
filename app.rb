@@ -27,7 +27,7 @@ class App < Sinatra::Base
 
   helpers do
     def redis
-      if Thread.current[:redis].nil? || 
+      if Thread.current[:redis].nil?
         Thread.current[:redis] = Redis.new(host: ENV.fetch('REDIS_HOST', "127.0.0.1"), port: 6379)
       end
       Thread.current[:redis]
