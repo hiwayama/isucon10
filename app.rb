@@ -144,7 +144,7 @@ class App < Sinatra::Base
   get '/api/chair/low_priced' do
     res = redis.get("LOW_PRICED_CHAIR")
     if res.nil?
-      res = { estates: load_low_priced_chairs}.to_json
+      res = { chair: load_low_priced_chairs}.to_json
       redis.set("LOW_PRICED_CHAIR", res)
     end
     # /api/chairで更新されるまでは消えないのでキャッシュ可能なはず...
