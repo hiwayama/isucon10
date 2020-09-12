@@ -484,12 +484,12 @@ class App < Sinatra::Base
     }
 
     # ここにindexきかせたほうがいいかも...？
-    sql = 'SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC'
+    sql = 'SELECT id FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ?'
     estates = db.xquery(sql, bounding_box[:bottom_right][:latitude], bounding_box[:top_left][:latitude], bounding_box[:bottom_right][:longitude], bounding_box[:top_left][:longitude])
 
     coordinates_to_text = "'POLYGON((%s))'" % coordinates.map { |c| '%f %f' % c.values_at(:longitude, :latitude) }.join(',')
     estate_ids = estates.map{|e| e[:id]}
-    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), ST_PointFromGeoHash(geo_hash, 0))' % [estate_ids.join(","), coordinates_to_text]
+    sql = 'SELECT * FROM estate WHERE id IN (%s) AND ST_Contains(ST_PolygonFromText(%s), ST_PointFromGeoHash(geo_hash, 0)) ORDER BY popularity DESC, id ASC' % [estate_ids.join(","), coordinates_to_text]
     estates_in_polygon = db.xquery(sql)
     nazotte_estates = estates_in_polygon.take(NAZOTTE_LIMIT)
     {
